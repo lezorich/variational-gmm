@@ -70,11 +70,12 @@ def swap_elements_at(map_from_to, numpy_array):
 
 class StreamingVariationalGMM:
 
-    def __init__(self, n_components, n_features, **kwargs):
+    def __init__(self, n_components, n_features, max_iter=50, **kwargs):
         self.checkpoints = []
         self.batch_checkpoints = []
         self.n_components = n_components
         self.n_features = n_features
+        self.max_iter = max_iter
 
         self.mixing_coefficient_threshold = 1e-4
 
@@ -145,7 +146,7 @@ class StreamingVariationalGMM:
                                          nu_0=self.nu_0,
                                          m_0=self.m_0,
                                          W_0=self.W_0)
-        variational_gmm.fit(X, max_iter=20)
+        variational_gmm.fit(X, max_iter=self.max_iter)
         variational_parameters = variational_gmm.get_variational_parameters()
         self._ignore_component_with_low_mixing_coef(
             variational_parameters, variational_gmm.calculate_E_pi_k())

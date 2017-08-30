@@ -1,7 +1,7 @@
 
 # coding: utf-8
 
-# In[1]:
+# In[18]:
 
 import numpy as np
 import matplotlib.pylab as plt
@@ -14,7 +14,7 @@ get_ipython().magic('matplotlib inline')
 get_ipython().magic('load_ext autoreload')
 get_ipython().magic('autoreload 2')
 
-LC_PATH = 'data/lc_1.3444.614.B.mjd'
+LC_PATH = 'data/lc_1.3441.15.B.mjd'
 np.random.seed(732839711)
 
 
@@ -99,16 +99,16 @@ plt.plot([max_aov, max_aov], ylims, linewidth=10, alpha=.25)
 # 
 # Now we load a lightcurve from the MACHO dataset, and try to get its period.
 
-# In[6]:
+# In[38]:
 
 lightcurve_df = lightcurve.read_from_file(LC_PATH, skiprows=3)
 lightcurve_df = lightcurve.remove_unreliable_observations(lightcurve_df)
 time, mag, error = lightcurve.unpack_df_in_arrays(lightcurve_df)
-real_period = 0.937
+real_period = 10.4166665761
 print('Real period:', real_period)
 
 
-# In[7]:
+# In[39]:
 
 def plot_folded_lightcurve(time, mag, period):
     color = [0.392157, 0.584314 ,0.929412]
@@ -121,18 +121,18 @@ def plot_folded_lightcurve(time, mag, period):
     plt.gca().invert_yaxis()
 
 
-# In[8]:
+# In[42]:
 
 plt.figure()
 plt.plot(time, mag, '*', alpha=0.25)
 
 plt.figure()
-plot_folded_lightcurve(time, mag, real_period)
+plot_folded_lightcurve(time, mag, 1.001 * real_period)
 
 
 # ### Calculating period using P4J
 
-# In[9]:
+# In[22]:
 
 p4j_model = P4J.periodogram(method='QMIEU')
 p4j_model.set_data(time, mag, error)
@@ -145,16 +145,16 @@ p4j_period = 1. / p4j_model.get_best_frequency()
 print('Period: ', p4j_period)
 
 plt.plot(1. / freq, per)
-plt.xlim([0, 2.0])
+plt.xlim([0, 20.0])
 ylims = plt.ylim()
 plt.plot([p4j_period, p4j_period], ylims, linewidth=10, alpha=.25)
 
 
 # ### Calculating the period using own AOV implementation
 
-# In[10]:
+# In[27]:
 
-model = streaming_aov.StreamingAOV(plow=0.01, phigh=2.0, step=1e-3)
+model = streaming_aov.StreamingAOV(plow=0.01, phigh=20.0, step=1e-3)
 
 start_calculating_period_secs = tm.time()
 model.update(time, mag, error)
@@ -172,16 +172,16 @@ plt.plot([max_aov, max_aov], ylims, linewidth=10, alpha=.25)
 
 # ### Calculating the period in a streaming way using AOV
 
-# In[11]:
+# In[33]:
 
 from streaming_gmm.streaming_lightcurve import to_chunks
 from streaming_gmm.streaming_aov import StreamingAOV
 
 real_period = 0.937
-model = StreamingAOV()
+model = streaming_aov.StreamingAOV(plow=0.01, phigh=20.0, step=1e-3)
 periodograms = []
 
-CHUNK_SIZE = 25
+CHUNK_SIZE = 11
 
 start_time = tm.time()
 for time, mag, error in to_chunks(lightcurve_df, chunk_size=CHUNK_SIZE):
@@ -211,7 +211,7 @@ plt.plot([max_aov, max_aov], ylims, linewidth=10, alpha=.25)
 
 # #### Plot of the evolution of the periodogram with the number of observations
 
-# In[12]:
+# In[34]:
 
 cols = 3
 rows = len(periodograms[:21]) // cols

@@ -46,7 +46,7 @@
 # p(\Theta \mid X_b, \dotsc, X_1) &\propto \left [\prod_{i=1}^B p(X_i \mid \Theta)\right ]p(\Theta) \\ 
 # p(\Theta \mid X_b, \dotsc, X_1) &\propto \left [\prod_{i=1}^B p(\Theta \mid X_i)p(\Theta)^{-1} \right ]p(\Theta) \\
 # p(\Theta \mid X_b, \dotsc, X_1) &\approx \left [\prod_{i=1}^B q_i(\Theta)p(\Theta)^{-1} \right ]p(\Theta) \\
-# p(\Theta \mid X_b, \dotsc, X_1) &\approx \text{exp} \left (\left [\xi_0 + \sum_{i=1}^B (\xi_b - \xi_0) \right ] \cdot T(\Theta) \right) \\
+# p(\Theta \mid X_b, \dotsc, X_1) &\approx \text{exp} \left (\left [\xi_0 + \sum_{i=1}^B (\xi_i - \xi_0) \right ] \cdot T(\Theta) \right) \\
 # \end{align}.
 # 
 # ### Mixture of GMM update
@@ -96,7 +96,7 @@
 # \begin{align}
 # \beta_k' &\leftarrow \beta_k + (\beta_k^{\star} - \beta_0) \\
 # \boldsymbol{m}_k' &\leftarrow \frac{1}{\beta_k'}(\beta_k\boldsymbol{m}_k + (\beta_k^{\star}\boldsymbol{m}_k^{\star} - \beta_0\boldsymbol{m}_0) \\
-# \boldsymbol{W}_k^{-1} &\leftarrow (\boldsymbol{W}_k^{-1} + \beta_k\boldsymbol{m}_k\boldsymbol{m}_k^T) + (\boldsymbol{W}_k^{-1\star} + \beta_k^{\star}\boldsymbol{m}_k^{\star}\boldsymbol{m}_k^{T\star}) - \beta_k\boldsymbol{m}_k\boldsymbol{m}_k^T \\
+# \boldsymbol{W}_k'^{-1} &\leftarrow (\boldsymbol{W}_k^{-1} + \beta_k\boldsymbol{m}_k\boldsymbol{m}_k^T) + (\boldsymbol{W}_k^{-1\star} + \beta_k^{\star}\boldsymbol{m}_k^{\star}\boldsymbol{m}_k^{T\star}) - \beta_k '\boldsymbol{m}_k '\boldsymbol{m}_k'^T \\
 # \nu_k' &\leftarrow \nu_k + (\nu_k^{\star} - \nu_0) \\
 # \end{align}
 # 
@@ -113,17 +113,18 @@
 # 
 # In the cell below we are going to generate synthetic data from multiple GMMs (one GMM per class).
 
-# In[1]:
+# In[2]:
 
 import pandas as pd
 import numpy as np
-from scipy.stats import invwishart
 import seaborn as sns
 import matplotlib.pyplot as plt
 import scipy
 
 import logging
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.DEBUG,
+                    filename='logs/jupyter_streaming_gmm_update_new_object_synthetic.log',
+                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 logger = logging.getLogger(__name__)
 
@@ -145,80 +146,9 @@ CLASS_COLORS = ['#66c2a5',
                 '#b3b3b3']
 
 
-# In[2]:
-
-class GMMDataGenerator:
-     
-    def __init__(self, m, k, d, mu_interval=(-10, 10), mu_var=(-4, 4),
-                 cov_var=(-1, 1), gamma_0=3.0, alpha_0=5.0):
-        """
-        Args:
-            k (int): number of components per class.
-            d (int): dimension of data.
-        """
-        self.k = k
-        self.d = d
-        self._mu_0 = np.zeros(d)
-        self.gamma_0 = gamma_0
-        self.alpha_0 = alpha_0
-        self.mu_interval = mu_interval
-        self.mu_var = mu_var
-        self.cov_var = cov_var
-        self.mu = np.zeros((k, d))
-        self.cov = np.zeros((k, d, d))
-        self.sample_cov()
-        self.sample_mean()
-        self.weights = np.random.dirichlet(self.gamma_0 * np.ones(k))
-        
-    def generate(self, n=2000):
-        X = np.zeros((n, self.d))
-        Z = np.zeros(n)
-        
-        # generate the component distributions
-        self.pi = np.random.dirichlet(self.alpha_0 * np.ones(self.k))
-        for i in range(n):
-            # generate random component of this observation
-            z_i = np.argmax(np.random.multinomial(1, self.pi))
-            Z[i] = z_i
-             
-            # generate the features
-            X[i, :] = np.random.multivariate_normal(self.mu[z_i, :], 
-                                                         self.cov[z_i, :])
-        return X, Z.astype(int)
-    
-    def sample_cov(self):
-        for j in range(self.k): 
-            self.cov[j, :] = invwishart.rvs(2 * self.d, np.eye(self.d))
-    
-    def sample_from_component(self, k):
-        return np.random.multivariate_normal(self.mu[k, :], 
-                                             self.cov[k, :])
-     
-    def get_mu(self):
-        return self.mu
-    
-    def get_cov(self):
-        return self.cov
-    
-    def sample_mean(self):
-        a, b = self.mu_interval
-        std_min, std_max = self.cov_var
-        mu_center = (b - a) * np.random.random(size=self.d) + a
-        mu_max = mu_center + self.mu_var[1]
-        mu_min = mu_center + self.mu_var[0]
-        for j in range(self.k):
-            mu_center_k = ((mu_max - mu_min) 
-                           * np.random.random(size=self.d)
-                           + mu_min)
-            self.mu[j, :] = np.random.multivariate_normal(
-                self._mu_0 + mu_center_k, self.cov[j, :])
-
-
 # In[3]:
 
-def plot_gmm_obs(X, C, title='', ax=None):
-    xlabel = 'x'
-    ylabel = 'y'
+def plot_gmm_obs(X, C, ax=None, title='', xlabel='x', ylabel='y'):
     components = np.max(C) + 1
     for k in range(components):
         obs_of_k_component = np.where(C == k)[0]
@@ -231,6 +161,7 @@ def plot_gmm_obs(X, C, title='', ax=None):
                     facecolor=CLASS_COLORS[k], alpha=0.5,
                     edgecolor='black', linewidth=0.15)
     if ax:
+        ax.set_title(title)
         ax.set_xlabel(xlabel)
         ax.set_ylabel(ylabel)
     else:
@@ -240,7 +171,7 @@ def plot_gmm_obs(X, C, title='', ax=None):
         plt.ylabel(ylabel)
 
 
-# In[4]:
+# In[14]:
 
 pal = sns.light_palette((200, 75, 60), input="husl", as_cmap=True)
 
@@ -260,19 +191,39 @@ def plot_gmm(X, mu, W, ax=None):
     max_x, max_y = np.amax(X, axis=0)
     x, y = np.mgrid[min_x:max_x:0.1, min_y:max_y:0.1]
     z = np.zeros(x.shape + (2,))
-    z[:, :, 0] = x;
+    z[:, :, 0] = x
     z[:, :, 1] = y
     for i in range(mu.shape[0]):
         f_z = scipy.stats.multivariate_normal.pdf(z, mu[i, :], W[i, :])
         if ax:
             ax.contour(x, y, f_z, antialiased=True, cmap=pal)
+            #ax.contour(x, y, f_z, antialiased=True, colors='r', levels=[0, 1, 10])
+            #sns.kdeplot(X[:, 0], X[:, 1], shade=True, ax=ax, shade_lowest=False)
         else:
             plt.contour(x, y, f_z, antialiased=True, cmap=pal)
 
 
 # In[5]:
 
-M = 1
+def plot_list_of_gmm(list_X, list_C, list_param):
+    cols = 4
+    rows = n_batchs // cols + 1
+    f, ax = plt.subplots(rows, cols, figsize=(15, 15))
+    for i in range(rows):
+        for j in range(cols):
+            index = i * cols + j
+            if index < n_batchs: 
+                X = list_X[index]
+                C = list_C[index]
+                mu_k = list_param[index]['mu_k']
+                W_k = list_param[index]['W_k']
+                plot_gmm(X,  mu_k,  W_k, ax=ax[i, j])
+    plt.show()
+
+
+# In[6]:
+
+from data_generator.gmm_generator import GMMGenerator
 
 # Number of components per class.
 K = 3
@@ -280,9 +231,7 @@ K = 3
 # Dimension of data.
 D = 2
 
-#np.random.seed()
-
-synthetic_gmm = GMMDataGenerator(m=M, k=K, d=D)
+synthetic_gmm = GMMGenerator(k=K, d=D)
 print('Mu:\n', synthetic_gmm.get_mu())
 print('Cov:\n', synthetic_gmm.get_cov())
 
@@ -291,7 +240,7 @@ print('Cov:\n', synthetic_gmm.get_cov())
 # 
 # In the following cell we generate batches of the synthetic GMM.
 
-# In[6]:
+# In[7]:
 
 n_batchs = 10
 
@@ -303,14 +252,15 @@ for i in range(n_batchs):
     C_batchs.append(new_C)
 
 
-# In[7]:
+# In[8]:
 
 plot_gmm_obs(np.concatenate(X_batchs), np.concatenate(C_batchs))
+plt.title('Synthetic data')
 
 
 # In the cell bellow we can see the data generated in each batch.
 
-# In[8]:
+# In[9]:
 
 cols = 4
 rows = n_batchs // cols + 1
@@ -321,23 +271,31 @@ for i in range(rows):
         if index < n_batchs:
             plot_gmm_obs(X_batchs[index], 
                          C_batchs[index], 
-                         ax=ax[i, j])
-            #plot_gmm_obs(X_batchs[index], C_batchs[index], ax=ax[i, j])
+                         ax=ax[i, j],
+                         title='Batch {}'.format(index))
+plt.suptitle('Data generated per batch')
+plt.subplots_adjust(hspace=.3)
 plt.show()
 
 
-# In[9]:
+# In[10]:
+
+def params_for_plot(params):
+    mu_k = params['m_k']
+    nu_k = params['nu_k']
+    W_k = np.linalg.inv(nu_k[:, np.newaxis, np.newaxis] * params['W_k'])
+    return {'mu_k': mu_k,
+            'W_k': W_k}
+
+
+# In[11]:
 
 import json
 
 from streaming_gmm.streaming_variational_gmm import StreamingVariationalGMM, VariationalGMM
 
-#prior =
-#W_0 = 5 * np.eye(D)
-
 result_list = []
 debug_dict = {}
-#streaming_vb_gmm = VariationalGMM(K, D)
 for i in range(1, n_batchs + 1):
     logger.info('Starting batch %d', i)
     #X = np.concatenate(X_batchs[:i])
@@ -362,8 +320,17 @@ with open('logs/variational_gmm_results.json', 'w') as outfile:
     json.dump(debug_dict, outfile)
 
 
-# In[10]:
+# In[12]:
 
+len(result_list)
+
+
+# In[15]:
+
+
+#param_list = [params_for_plot(res['variational_parameters'])
+#              for res in result_list]
+#plot_list_of_gmm(X_batchs, C_batchs, param_list)
 cols = 4
 rows = n_batchs // cols + 1
 f, ax = plt.subplots(rows, cols, figsize=(15, 15))
@@ -385,7 +352,7 @@ for i in range(rows):
 plt.show()
 
 
-# In[12]:
+# In[16]:
 
 from streaming_gmm.streaming_variational_gmm import StreamingVariationalGMM, VariationalGMM
 
@@ -401,7 +368,7 @@ result_list = streaming_vb_gmm.checkpoints
 #plot_gmm(X, vbGmm.m_k, np.linalg.inv(vbGmm.nu_k[:, np.newaxis, np.newaxis]*vbGmm.W_k))
 
 
-# In[13]:
+# In[17]:
 
 cols = 4
 rows = n_batchs // cols + 1
